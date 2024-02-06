@@ -19,58 +19,71 @@
 ##       See also evaluations for an example use of this problem.
 #########
 
-## Stan code for the problem
-stanmodelcode <- "
-data {
-  real mu;
-  real a;
-  int <lower=0> n1;
-  int <lower=0> n2;
-  matrix[n2,n1] b;
-}
-parameters {
-  vector[n1*n2 + 1] X;
-}
-model {
-  X[n1*n2 + 1] ~ normal(mu, 1/(2*a));
-  for ( j in 1:n2 ) {
-    X[(j-1)*n1+1] ~ normal(X[n1*n2 + 1]^2, 1/(2*b[j,1]));
-    for ( i in 2:n1 ) {
-      X[(j-1)*n1+i] ~ normal(X[(j-1)*n1+i-1]^2, 1/(2*b[j,i]));
-    }
-  }
-}
-"
-
-## Exact sampling method
-sample_banana <- function(nsamples,mu,a,b){
-  n2 = nrow(b); n1 = ncol(b)
-  if(n1 < 2) stop("need more than 2 columns for b")
-  n <- n2*n1 + 1
-  X <- matrix(0, nsamples, n)
-  X[,n] <- rnorm(nsamples, mean = mu, sd = 1/(2*a))
-  for ( j in 1:n2 ) {
-    X[,(j-1)*n1+1] <- rnorm(nsamples,X[,n]^2, 1/(2*b[j,1])); # pos [j,1] = (j-1)*n1+1
-    for ( i in 2:n1 ) {
-      X[,(j-1)*n1+i] <- rnorm(nsamples,X[,(j-1)*n1+i-1]^2, 1/(2*b[j,i])); # pos [j,i] = (j-1)*n1+i
-    }
-  }
-  return(X)
-}
-
-get_banana <- function(mu = 1, a = 1, b = matrix(5,2,2)){
+get_banana <- function(mu = 1, a = 1, b = matrix(5,2,2), use_stan = T){
   n2 = nrow(b); n1 = ncol(b)
   if(n1 < 2) stop("need more than 2 columns for b")
   dat = list(mu=mu, a=a,n1=n1,n2=n2,b = b)
-  require("rstan")
-  stan_fit <<- stan(model_code = stanmodelcode,
-                    data = dat, warmup = 0, iter = 0, chains = 1, 
-                    verbose = FALSE) 
-  f <- function(x){log_prob(stan_fit, x)}
-  g <- function(x){grad_log_prob(stan_fit, x)}
-  sample_fun <- function(nsamp=10000){
-    return(sample_banana(nsamples = nsamp,mu=mu,a=a,b=b))
+  
+  if(use_stan){
+    require("rstan")
+    ## Stan code for the Hybrid Rosenbrock
+    stanmodelcode <- "
+    data {
+      real mu;
+      real a;
+      int <lower=0> n1;
+      int <lower=0> n2;
+      matrix[n2,n1] b;
     }
+    parameters {
+      vector[n1*n2 + 1] X;
+    }
+    model {
+      X[n1*n2 + 1] ~ normal(mu, 1/(2*a));
+      for ( j in 1:n2 ) {
+        X[(j-1)*n1+1] ~ normal(X[n1*n2 + 1]^2, 1/(2*b[j,1]));
+        for ( i in 2:n1 ) {
+          X[(j-1)*n1+i] ~ normal(X[(j-1)*n1+i-1]^2, 1/(2*b[j,i]));
+        }
+      }
+    }
+    "
+    stan_banana <<- stan(model_code = stanmodelcode,
+                      data = dat, warmup = 0, iter = 0, chains = 1, 
+                      verbose = FALSE) 
+    f <- function(x){log_prob(stan_banana, x)}
+    g <- function(x){grad_log_prob(stan_banana, x)}
+  } else {
+    
+    ## Log likelihood for Hybrid Rosenbrock
+    f <- function(X){
+      n = n1*n2 + 1
+      lp = dnorm(X[n], mu, 1/(2*a), log = T)
+      for ( j in 1:n2 ) {
+        lp = lp + dnorm(X[(j-1)*n1+1], X[n1*n2 + 1]^2, 1/(2*b[j,1]), log = T);
+        for ( i in 2:n1 ) {
+          lp = lp + dnorm(X[(j-1)*n1+i], X[(j-1)*n1+i-1]^2, 1/(2*b[j,i]), log = T);
+        }
+      }
+      return(lp)
+    }
+    g <- NULL
+  }
+
+  sample_fun <- function(nsamples=10000){
+    if(n1 < 2) stop("need more than 2 columns for b")
+    n <- n2*n1 + 1
+    X <- matrix(0, nsamples, n)
+    X[,n] <- rnorm(nsamples, mean = mu, sd = 1/(2*a))
+    for ( j in 1:n2 ) {
+      X[,(j-1)*n1+1] <- rnorm(nsamples,X[,n]^2, 1/(2*b[j,1])); # pos [j,1] = (j-1)*n1+1
+      for ( i in 2:n1 ) {
+        X[,(j-1)*n1+i] <- rnorm(nsamples,X[,(j-1)*n1+i-1]^2, 1/(2*b[j,i])); # pos [j,i] = (j-1)*n1+i
+      }
+    }
+    return(X)
+  }
+  
   return(list(
     log_p = f,
     grad_log_p = g,
