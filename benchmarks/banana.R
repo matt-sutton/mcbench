@@ -67,6 +67,7 @@ get_banana <- function(mu = 1, a = 1, b = matrix(5,2,2), use_stan = T){
       }
       return(lp)
     }
+    stan_banana <- NULL
     g <- NULL
   }
 
@@ -87,7 +88,8 @@ get_banana <- function(mu = 1, a = 1, b = matrix(5,2,2), use_stan = T){
   return(list(
     log_p = f,
     grad_log_p = g,
-    samples = sample_fun
+    samples = sample_fun,
+    stan_dat = dat
   ))
 }
 
